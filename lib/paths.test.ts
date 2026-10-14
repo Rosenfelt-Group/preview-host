@@ -13,6 +13,11 @@ describe("safePath", () => {
       expect(safePath(bad)).toBeNull();
     }
   });
+  it("rejects dotfiles", () => {
+    for (const bad of [[".env"], ["assets", ".hidden"], [".git", "config"], [".DS_Store"]]) {
+      expect(safePath(bad)).toBeNull();
+    }
+  });
   it("rejects an empty list", () => {
     expect(safePath([])).toBeNull();
   });

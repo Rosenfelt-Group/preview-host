@@ -13,5 +13,6 @@ describe("BRIDGE_JS", () => {
     expect(BRIDGE_JS).not.toContain("eval(");
     expect(BRIDGE_JS).not.toContain("document.cookie");
     expect(BRIDGE_JS).not.toContain("</script>");
+    expect(BRIDGE_JS).not.toContain("<!--");
   });
 });
