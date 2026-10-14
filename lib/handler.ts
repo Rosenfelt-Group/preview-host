@@ -11,14 +11,19 @@ export interface HandlerDeps {
   fetchObject: (objectPath: string) => Promise<{ status: number; body: ArrayBuffer } | null>;
 }
 
-const plain = (status: number, text: string) =>
-  new Response(text, {
-    status,
-    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
-  });
-
 export function makeHandler(deps: HandlerDeps) {
   const headers = securityHeaders(deps.frameAncestors);
+  const ancestors = deps.frameAncestors.length > 0 ? deps.frameAncestors.join(" ") : "'none'";
+  const plain = (status: number, text: string) =>
+    new Response(text, {
+      status,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": `default-src 'none'; frame-ancestors ${ancestors}`,
+      },
+    });
 
   return async function handle(grant: string, segments: string[]): Promise<Response> {
     // Same body for every grant failure: reveal nothing about why.

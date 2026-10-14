@@ -140,6 +140,26 @@ describe("preview handler", () => {
     expect((await handle(signGrant(`${E}/${D}/v1`, SECRET), ["a.html"])).headers.get("x-content-type-options")).toBe("nosniff");
   });
 
+  it("error responses carry nosniff and a minimal CSP with the framing config", async () => {
+    const { handle } = setup({});
+    const fetchObject = vi.fn(async () => {
+      throw new Error("x");
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const h502 = makeHandler({ secret: SECRET, frameAncestors: ["https://portal.rosably.com"], fetchObject });
+    const rs = [
+      await handle("garbage", ["a"]),
+      await handle(signGrant(`${E}/${D}/v1`, SECRET), ["a.html"]),
+      await h502(signGrant(`${E}/${D}/v1`, SECRET), ["a.html"]),
+    ];
+    expect(rs.map((r) => r.status)).toEqual([403, 404, 502]);
+    for (const r of rs) {
+      expect(r.headers.get("content-security-policy")).toBe("default-src 'none'; frame-ancestors https://portal.rosably.com");
+      expect(r.headers.get("x-content-type-options")).toBe("nosniff");
+    }
+    vi.restoreAllMocks();
+  });
+
   it("sends the full security header set on a 200", async () => {
     const { handle } = setup({ [`${E}/${D}/v1/index.html`]: "<body></body>" });
     const res = await handle(signGrant(`${E}/${D}/v1`, SECRET), ["index.html"]);
