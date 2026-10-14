@@ -1,3 +1,5 @@
-export default function Page() {
-  return <p>Not found.</p>;
+import { notFound } from "next/navigation";
+
+export default function Page(): never {
+  notFound();
 }
