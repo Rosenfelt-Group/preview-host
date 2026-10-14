@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { StorageError } from "./storage";
 import { makeHandler } from "./handler";
 import { signGrant } from "./grant";
 import { BRIDGE_JS } from "./bridge";
@@ -90,6 +91,7 @@ describe("preview handler", () => {
     const { handle, fetchObject } = setup({ [`${E}/${D}/v2/index.html`]: "secret v2" });
     const res = await handle(signGrant(`${E}/${D}/v1`, SECRET), ["index.html"]);
     expect(res.status).toBe(404);
+    expect(fetchObject).toHaveBeenCalledTimes(1);
     for (const call of fetchObject.mock.calls) expect(call[0].startsWith(`${E}/${D}/v1/`)).toBe(true);
   });
 
@@ -99,14 +101,52 @@ describe("preview handler", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns a bare 502 when storage throws", async () => {
+  it("returns a bare 502 and logs a fixed string when storage throws", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const fetchObject = vi.fn(async () => {
-      throw new Error("boom SECRET_KEY_123 at /srv/stack");
+      throw new TypeError("boom SECRET_KEY_123 at /srv/stack");
+    });
+    const handle = makeHandler({ secret: SECRET, frameAncestors: [], fetchObject });
+    const grant = signGrant(`${E}/${D}/v1`, SECRET);
+    const res = await handle(grant, ["index.html"]);
+    expect(res.status).toBe(502);
+    expect(await res.text()).toBe("Bad gateway");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith("preview-host: storage failure (TypeError)");
+    const logged = JSON.stringify(spy.mock.calls);
+    expect(logged).not.toContain("SECRET_KEY_123");
+    expect(logged).not.toContain(grant);
+    expect(logged).not.toContain(E);
+    spy.mockRestore();
+  });
+
+  it("logs only the status for storage errors", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchObject = vi.fn(async () => {
+      throw new StorageError(503);
     });
     const handle = makeHandler({ secret: SECRET, frameAncestors: [], fetchObject });
     const res = await handle(signGrant(`${E}/${D}/v1`, SECRET), ["index.html"]);
     expect(res.status).toBe(502);
-    expect(await res.text()).toBe("Bad gateway");
-    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(spy).toHaveBeenCalledWith("preview-host: storage failure (HTTP 503)");
+    spy.mockRestore();
+  });
+
+  it("puts nosniff on 403 and 404 plain responses", async () => {
+    const { handle } = setup({});
+    expect((await handle("garbage", ["a"])).headers.get("x-content-type-options")).toBe("nosniff");
+    expect((await handle(signGrant(`${E}/${D}/v1`, SECRET), ["a.html"])).headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("sends the full security header set on a 200", async () => {
+    const { handle } = setup({ [`${E}/${D}/v1/index.html`]: "<body></body>" });
+    const res = await handle(signGrant(`${E}/${D}/v1`, SECRET), ["index.html"]);
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("cache-control")).toContain("private");
+    expect(res.headers.get("content-security-policy")).toContain("form-action 'none'");
   });
 });

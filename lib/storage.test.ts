@@ -52,14 +52,64 @@ describe("storage fetchObject", () => {
     expect(await fetchObject("x/y")).toBeNull();
   });
 
-  it("throws without leaking the key when env is missing", async () => {
+  it("returns null for HTTP 404", async () => {
+    stubFetch(new Response("nope", { status: 404 }));
+    expect(await fetchObject("x/y")).toBeNull();
+  });
+
+  it("returns null for HTTP 400 with a not_found body", async () => {
+    stubFetch(new Response(JSON.stringify({ statusCode: "404", error: "not_found", message: "Object not found" }), { status: 400 }));
+    expect(await fetchObject("x/y")).toBeNull();
+    stubFetch(new Response(JSON.stringify({ statusCode: 404 }), { status: 400 }));
+    expect(await fetchObject("x/y")).toBeNull();
+    stubFetch(new Response(JSON.stringify({ error: "not_found" }), { status: 400 }));
+    expect(await fetchObject("x/y")).toBeNull();
+  });
+
+  it("throws for HTTP 400 with another body", async () => {
+    stubFetch(new Response(JSON.stringify({ statusCode: "400", error: "bad", message: "LEAKY" }), { status: 400 }));
+    await expect(fetchObject("x/y")).rejects.toThrow("storage returned HTTP 400");
+    stubFetch(new Response("not json", { status: 400 }));
+    await expect(fetchObject("x/y")).rejects.toThrow("storage returned HTTP 400");
+  });
+
+  it.each([401, 403, 500, 503])("throws a status-only error for HTTP %i", async (status) => {
+    stubFetch(new Response(`body-with-${KEY}`, { status }));
+    const err = await fetchObject("x/y").catch((e) => e);
+    expect(err.message).toBe(`storage returned HTTP ${status}`);
+    expect(err.message).not.toContain(KEY);
+  });
+
+  it("strips trailing slashes from SUPABASE_URL", async () => {
+    process.env.SUPABASE_URL = `${URL_BASE}//`;
+    const f = stubFetch(new Response("ok", { status: 200 }));
+    await fetchObject("a/b");
+    expect((f.mock.calls[0] as unknown as [string])[0]).toBe(`${URL_BASE}/storage/v1/object/prototypes/a/b`);
+  });
+
+  it("refuses redirects and sets a timeout signal", async () => {
+    const f = stubFetch(new Response("ok", { status: 200 }));
+    await fetchObject("a/b");
+    const init = (f.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(init.redirect).toBe("error");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("throws without leaking the key when the URL is missing", async () => {
     delete process.env.SUPABASE_URL;
-    stubFetch(new Response("ok"));
-    await expect(fetchObject("x/y")).rejects.toThrow(Error);
-    try {
-      await fetchObject("x/y");
-    } catch (e) {
-      expect((e as Error).message).not.toContain(KEY);
-    }
+    const f = stubFetch(new Response("ok"));
+    const err = await fetchObject("x/y").catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).not.toContain(KEY);
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it("throws when the service key is missing", async () => {
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const f = stubFetch(new Response("ok"));
+    const err = await fetchObject("x/y").catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).not.toContain(URL_BASE);
+    expect(f).not.toHaveBeenCalled();
   });
 });

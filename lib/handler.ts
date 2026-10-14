@@ -3,6 +3,7 @@ import { safePath } from "./paths";
 import { contentTypeFor } from "./mime";
 import { securityHeaders } from "./headers";
 import { injectBridge } from "./inject";
+import { StorageError } from "./storage";
 
 export interface HandlerDeps {
   secret: string;
@@ -13,7 +14,7 @@ export interface HandlerDeps {
 const plain = (status: number, text: string) =>
   new Response(text, {
     status,
-    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
   });
 
 export function makeHandler(deps: HandlerDeps) {
@@ -30,8 +31,10 @@ export function makeHandler(deps: HandlerDeps) {
     let obj: { status: number; body: ArrayBuffer } | null;
     try {
       obj = await deps.fetchObject(`${g.prefix}/${rel}`);
-    } catch {
-      // Never surface the error message or stack: it may mention config or secrets.
+    } catch (e) {
+      // Fixed strings only: never log e.message, the grant, prefix, path or headers.
+      const what = e instanceof StorageError ? `HTTP ${e.status}` : e instanceof Error ? e.constructor.name : "unknown";
+      console.error(`preview-host: storage failure (${what})`);
       return plain(502, "Bad gateway");
     }
     if (!obj || obj.status !== 200) return plain(404, "Not found");
