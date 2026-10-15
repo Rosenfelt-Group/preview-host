@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fetchObject } from "./storage";
+import { fetchObject, streamDocument, StorageError } from "./storage";
 
 const URL_BASE = "https://proj.supabase.co";
 const KEY = "service-key-abc123";
@@ -111,5 +111,24 @@ describe("storage fetchObject", () => {
     expect(err).toBeInstanceOf(Error);
     expect(err.message).not.toContain(URL_BASE);
     expect(f).not.toHaveBeenCalled();
+  });
+});
+
+describe("storage streamDocument", () => {
+  it("streams from the room-documents bucket with auth headers and passes Content-Length through", async () => {
+    const f = stubFetch(new Response("PDFDATA", { status: 200, headers: { "content-length": "7" } }));
+    const out = await streamDocument("e/d/u/document.pdf");
+    const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`${URL_BASE}/storage/v1/object/room-documents/e/d/u/document.pdf`);
+    expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${KEY}`);
+    expect(init.redirect).toBe("error");
+    expect(out!.length).toBe("7");
+    expect(await new Response(out!.body).text()).toBe("PDFDATA");
+  });
+  it("returns null for a missing object and throws StorageError for other failures", async () => {
+    stubFetch(new Response(JSON.stringify({ statusCode: "404", error: "not_found" }), { status: 400 }));
+    expect(await streamDocument("e/d/u/document.pdf")).toBeNull();
+    stubFetch(new Response("boom", { status: 500 }));
+    await expect(streamDocument("e/d/u/document.pdf")).rejects.toBeInstanceOf(StorageError);
   });
 });
