@@ -123,7 +123,13 @@ describe("storage streamDocument", () => {
     expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${KEY}`);
     expect(init.redirect).toBe("error");
     expect(out!.length).toBe("7");
+    expect((init.headers as Record<string, string>)["Accept-Encoding"]).toBe("identity");
     expect(await new Response(out!.body).text()).toBe("PDFDATA");
+  });
+  it("drops Content-Length when upstream applied a content-encoding (fetch decompresses transparently)", async () => {
+    stubFetch(new Response("PDFDATA", { status: 200, headers: { "content-length": "3", "content-encoding": "gzip" } }));
+    const out = await streamDocument("e/d/u/document.pdf");
+    expect(out!.length).toBeNull();
   });
   it("returns null for a missing object and throws StorageError for other failures", async () => {
     stubFetch(new Response(JSON.stringify({ statusCode: "404", error: "not_found" }), { status: 400 }));

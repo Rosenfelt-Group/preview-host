@@ -51,7 +51,7 @@ export async function streamDocument(objectPath: string): Promise<{ body: Readab
   let res: Response;
   try {
     res = await fetch(`${base}/storage/v1/object/room-documents/${encoded}`, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "Accept-Encoding": "identity" },
       cache: "no-store",
       redirect: "error",
       signal: ctrl.signal,
@@ -65,5 +65,7 @@ export async function streamDocument(objectPath: string): Promise<{ body: Readab
     throw new StorageError(res.status);
   }
   if (!res.body) throw new StorageError(502);
-  return { body: res.body, length: res.headers.get("content-length") };
+  // fetch transparently decompresses but keeps the upstream Content-Length, which would then be wrong.
+  const length = res.headers.get("content-encoding") ? null : res.headers.get("content-length");
+  return { body: res.body, length };
 }
