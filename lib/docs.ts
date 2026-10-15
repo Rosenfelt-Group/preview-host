@@ -69,7 +69,15 @@ export function makeInlineDocHandler(deps: DocDeps & { frameAncestors: string[] 
   const plainFramed = (status: number, text: string) =>
     new Response(text, {
       status,
-      headers: { ...DOC_HEADERS, "Content-Type": "text/plain; charset=utf-8", "Content-Security-Policy": `default-src 'none'; frame-ancestors ${ancestors}` },
+      // Deliberately not DOC_HEADERS: that carries X-Frame-Options: DENY and CORP same-origin, which would
+      // block the dashboard from framing the error page and contradict frame-ancestors.
+      headers: {
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store",
+        "Referrer-Policy": "no-referrer",
+        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Security-Policy": `default-src 'none'; frame-ancestors ${ancestors}`,
+      },
     });
   return async function handle(grant: string): Promise<Response> {
     const g = verifyDocGrant(grant, deps.secret, deps.now ? deps.now() : Date.now());

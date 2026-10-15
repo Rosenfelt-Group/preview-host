@@ -38,6 +38,8 @@ describe("makeInlineDocHandler", () => {
       const r = await handler(async () => ({ body: body("x"), length: null }))(grant(ext));
       expect(r.headers.get("content-type")).toBe(type);
       expect(r.headers.get("content-security-policy")).toBe("default-src 'none'; frame-ancestors https://dashboard.rosably.com");
+      expect(r.headers.get("x-frame-options")).toBeNull();
+      expect(r.headers.get("cross-origin-resource-policy")).toBeNull();
     }
   });
   it("always serves txt, csv and md as text/plain utf-8, never html or markdown", async () => {
@@ -45,6 +47,8 @@ describe("makeInlineDocHandler", () => {
       const r = await handler(async () => ({ body: body("<script>alert(1)</script>"), length: null }))(grant(ext));
       expect(r.headers.get("content-type")).toBe("text/plain; charset=utf-8");
       expect(r.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(r.headers.get("x-frame-options")).toBeNull();
+      expect(r.headers.get("cross-origin-resource-policy")).toBeNull();
     }
   });
   it("sends an HTML payload named .pdf as application/pdf (type comes from the extension map)", async () => {
@@ -76,7 +80,17 @@ describe("makeInlineDocHandler", () => {
   });
   it("error pages may still be framed by the dashboard, and use 'none' when no ancestors are configured", async () => {
     const r = await handler(async () => null)(grant("pdf"));
+    expect(r.status).toBe(404);
     expect(r.headers.get("content-security-policy")).toContain("frame-ancestors https://dashboard.rosably.com");
+    const forbidden = await handler(async () => null)("garbage");
+    expect(forbidden.status).toBe(403);
+    for (const e of [r, forbidden]) {
+      expect(e.headers.get("x-frame-options")).toBeNull();
+      expect(e.headers.get("cross-origin-resource-policy")).toBeNull();
+      expect(e.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(e.headers.get("cache-control")).toBe("private, no-store");
+      expect(e.headers.get("referrer-policy")).toBe("no-referrer");
+    }
     const none = await makeInlineDocHandler({ secret: SECRET, streamDocument: async () => null, now: () => NOW + 1000, frameAncestors: [] })("garbage");
     expect(none.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
   });
