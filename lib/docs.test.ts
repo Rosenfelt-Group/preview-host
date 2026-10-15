@@ -79,5 +79,8 @@ describe("contentDisposition", () => {
     const h = contentDisposition('x";\\\r\nSet-Cookie: a=b.pdf');
     expect(h).not.toMatch(/[\r\n]/);
     expect(h.split('"').length).toBe(3);
+    const quoted = h.split('"')[1];
+    expect(quoted).not.toContain("\\");
+    expect(quoted).not.toContain(";");
   });
 });

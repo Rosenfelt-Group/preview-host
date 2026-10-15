@@ -57,6 +57,7 @@ export async function streamDocument(objectPath: string): Promise<{ body: Readab
       signal: ctrl.signal,
     });
   } finally {
+    // Timer cleared on headers: a stalled body stream is bounded by the platform function duration, by design.
     clearTimeout(timer);
   }
   if (!res.ok) {
